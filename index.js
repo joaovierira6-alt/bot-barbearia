@@ -34,8 +34,11 @@ const client = new Client({
 })
 
 client.on('qr', qr => {
-  console.log('QR CODE DA BARBEARIA:')
+  console.log('=== QR CODE DA BARBEARIA ===')
   qrcode.generate(qr, { small: true })
+  console.log('LINK DO QR PRA ESCANEAR:')
+  console.log('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr))
+  console.log('=== COPIA O LINK ACIMA E ABRE NO NAVEGADOR ===')
 })
 
 client.on('ready', () => {
