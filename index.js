@@ -2,7 +2,6 @@ const express = require('express')
 const { Client, LocalAuth } = require('whatsapp-web.js')
 const qrcode = require('qrcode-terminal')
 
-// 1. SERVIDOR HTTP PRO RENDER
 const app = express()
 const PORT = process.env.PORT || 3000
 app.use(express.json())
@@ -15,7 +14,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('Servidor rodando na porta ' + PORT)
 })
 
-// 2. CONFIG DO WHATSAPP PRA RENDER
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: './sessions' }),
   puppeteer: {
@@ -49,4 +47,15 @@ client.on('disconnected', reason => {
 })
 
 client.on('message', async msg => {
-  console.log('Mensagem recebida:',
+  console.log('Mensagem recebida:', msg.body)
+  
+  if (msg.body.toLowerCase() === 'menu') {
+    msg.reply('Barbearia\n1 - Agendar\n2 - Precos\n3 - Horarios')
+  }
+})
+
+client.initialize()
+
+process.on('unhandledRejection', err => {
+  console.error('Erro nao tratado:', err)
+})
