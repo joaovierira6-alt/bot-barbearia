@@ -18,11 +18,13 @@ const genAI = new GoogleGenerativeAI(GEMINI_API_KEY)
 const clientes = {}
 // ================================
 
+console.log('>>> INICIANDO BOT - VERSÃO COM PAREAMENTO <<<')
+
 // APAGA SESSÃO ANTIGA AUTOMATICAMENTE
 const sessionPath = './sessions'
 if (fs.existsSync(sessionPath)) {
   fs.rmSync(sessionPath, { recursive: true, force: true })
-  console.log('>>> Sessão antiga apagada. Criando nova... <<<')
+  console.log('>>> Sessão antiga apagada <<<')
 }
 
 app.get('/', (req, res) => res.send('Bot Inteligente Online'))
@@ -38,31 +40,39 @@ const client = new Client({
 })
 
 client.on('loading_screen', (percent, message) => {
-  console.log('CARREGANDO', percent, message)
+  console.log('CARREGANDO:', percent, message)
 })
 
 client.on('qr', async (qr) => {
-  console.log('QR gerado. Solicitando código de pareamento...')
+  console.log('>>> EVENTO QR DISPARADO <<<')
+  console.log('Solicitando código de pareamento para:', BOT_PHONE_NUMBER)
   try {
     const code = await client.requestPairingCode(BOT_PHONE_NUMBER)
     console.log('>>> CÓDIGO DE PAREAMENTO: ' + code + ' <<<')
-    console.log('WhatsApp > Aparelhos conectados > Conectar com número > Digite o código')
+    console.log('>>> COPIA O CÓDIGO ACIMA E COLA NO WHATSAPP <<<')
   } catch (err) {
-    console.log('Erro ao gerar código:', err.message)
+    console.log('>>> ERRO AO GERAR CÓDIGO:', err)
   }
 })
 
 client.on('authenticated', () => {
-  console.log('>>> AUTENTICADO <<<')
+  console.log('>>> AUTENTICADO COM SUCESSO <<<')
 })
 
 client.on('auth_failure', msg => {
-  console.error('FALHA NA AUTENTICAÇÃO', msg)
+  console.error('>>> FALHA NA AUTENTICAÇÃO:', msg)
 })
 
 client.on('ready', () => {
   console.log('>>> BOT INTELIGENTE ONLINE <<< ')
 })
+
+client.on('disconnected', (reason) => {
+  console.log('>>> CLIENTE DESCONECTADO:', reason)
+})
+
+console.log('>>> INICIALIZANDO CLIENT <<<')
+client.initialize()
 
 //... resto das funções entenderMensagem, buscarHorariosSalonSoft, agendarSalonSoft, setInterval, client.on('message') continua IGUAL...
 
@@ -257,5 +267,3 @@ Esse horário deve ter sido ocupado. Manda "horarios" que te mostro os livres.`)
   }
   await msg.reply(ia.resposta)
 })
-
-client.initialize()
