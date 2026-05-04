@@ -1,8 +1,8 @@
 const express = require('express')
 const { Client, LocalAuth } = require('whatsapp-web.js')
-const qrcode = require('qrcode-terminal')
 const puppeteer = require('puppeteer')
 const { GoogleGenerativeAI } = require('@google/generative-ai')
+const fs = require('fs')
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -15,32 +15,56 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 const BOT_PHONE_NUMBER = '5551981246261'
 const ENDERECO_BARBEARIA = 'Rua 112, n° 28 - Guajuviras, Canoas'
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY)
-
 const clientes = {}
 // ================================
 
+// APAGA SESSÃO ANTIGA AUTOMATICAMENTE
+const sessionPath = './sessions'
+if (fs.existsSync(sessionPath)) {
+  fs.rmSync(sessionPath, { recursive: true, force: true })
+  console.log('>>> Sessão antiga apagada. Criando nova... <<<')
+}
+
 app.get('/', (req, res) => res.send('Bot Inteligente Online'))
-app.listen(PORT, '0.0.0.0', () => console.log('Servidor rodando'))
+app.listen(PORT, '0.0.0.0', () => console.log('Servidor rodando na porta', PORT))
 
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: './sessions' }),
   puppeteer: {
     headless: 'new',
     executablePath: puppeteer.executablePath(),
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
   }
 })
 
-client.on('qr', qr => {
-  console.log('QR gerado. Use o CÓDIGO DE PAREAMENTO abaixo para conectar.')
+client.on('loading_screen', (percent, message) => {
+  console.log('CARREGANDO', percent, message)
 })
 
-client.on('code', code => {
-  console.log('>>> CÓDIGO DE PAREAMENTO: ' + code + ' <<<')
-  console.log('WhatsApp -> Aparelhos conectados -> Conectar com número de telefone -> Digite o código acima')
+client.on('qr', async (qr) => {
+  console.log('QR gerado. Solicitando código de pareamento...')
+  try {
+    const code = await client.requestPairingCode(BOT_PHONE_NUMBER)
+    console.log('>>> CÓDIGO DE PAREAMENTO: ' + code + ' <<<')
+    console.log('WhatsApp > Aparelhos conectados > Conectar com número > Digite o código')
+  } catch (err) {
+    console.log('Erro ao gerar código:', err.message)
+  }
 })
 
-client.on('ready', () => console.log('>>> BOT INTELIGENTE ONLINE <<< '))
+client.on('authenticated', () => {
+  console.log('>>> AUTENTICADO <<<')
+})
+
+client.on('auth_failure', msg => {
+  console.error('FALHA NA AUTENTICAÇÃO', msg)
+})
+
+client.on('ready', () => {
+  console.log('>>> BOT INTELIGENTE ONLINE <<< ')
+})
+
+//... resto das funções entenderMensagem, buscarHorariosSalonSoft, agendarSalonSoft, setInterval, client.on('message') continua IGUAL...
 
 async function entenderMensagem(texto, nomeCliente) {
   const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
@@ -85,27 +109,20 @@ async function buscarHorariosSalonSoft() {
       executablePath: puppeteer.executablePath(),
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     })
-
     const page = await browser.newPage()
     await page.setViewport({ width: 1366, height: 768 })
-
     await page.goto('https://www.appsalonsoft.com.br/#/login', { waitUntil: 'networkidle0', timeout: 60000 })
     await page.type('input[type="text"], input[type="tel"]', SALON_LOGIN)
     await page.type('input[type="password"]', SALON_SENHA)
     await page.click('button[type="submit"]')
     await page.waitForNavigation({ waitUntil: 'networkidle0' })
-
     await page.goto('https://www.appsalonsoft.com.br/#/agenda', { waitUntil: 'networkidle0' })
     await page.waitForTimeout(7000)
-
     const horarios = await page.evaluate(() => {
       const horasPadrao = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00']
-      const agendamentos = Array.from(document.querySelectorAll('.fc-event,.evento,[class*="agendamento"]'))
-    .map(el => el.innerText)
-    .join(' | ')
+      const agendamentos = Array.from(document.querySelectorAll('.fc-event,.evento,[class*="agendamento"]')).map(el => el.innerText).join(' | ')
       return horasPadrao.filter(hora =>!agendamentos.includes(hora)).slice(0, 8)
     })
-
     await browser.close()
     console.log('Horários encontrados:', horarios)
     return horarios
@@ -125,19 +142,15 @@ async function agendarSalonSoft(horario, nomeCliente) {
       executablePath: puppeteer.executablePath(),
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     })
-
     const page = await browser.newPage()
     await page.setViewport({ width: 1366, height: 768 })
-
     await page.goto('https://www.appsalonsoft.com.br/#/login', { waitUntil: 'networkidle0', timeout: 60000 })
     await page.type('input[type="text"], input[type="tel"]', SALON_LOGIN)
     await page.type('input[type="password"]', SALON_SENHA)
     await page.click('button[type="submit"]')
     await page.waitForNavigation({ waitUntil: 'networkidle0' })
-
     await page.goto('https://www.appsalonsoft.com.br/#/agenda', { waitUntil: 'networkidle0' })
     await page.waitForTimeout(5000)
-
     const clicou = await page.evaluate((h) => {
       const slots = Array.from(document.querySelectorAll('div, button, td'))
       const slot = slots.find(el => {
@@ -150,29 +163,23 @@ async function agendarSalonSoft(horario, nomeCliente) {
       }
       return false
     }, horario)
-
     if (!clicou) throw new Error('Horário não encontrado ou já ocupado')
-
     await page.waitForTimeout(2000)
     const campoCliente = await page.$('input[placeholder*="cliente" i], input[formcontrolname="cliente"], input[name*="cliente" i]')
     if (!campoCliente) throw new Error('Campo de cliente não encontrado')
-
     await campoCliente.type(nomeCliente)
     await page.waitForTimeout(1000)
     await page.keyboard.press('Enter')
     await page.waitForTimeout(1500)
-
     const botaoSalvar = await page.$('button[type="submit"]')
     if (botaoSalvar) {
       await botaoSalvar.click()
     } else {
       await page.keyboard.press('Enter')
     }
-
     await page.waitForTimeout(3000)
     await browser.close()
     return { sucesso: true }
-
   } catch (error) {
     console.log('Erro ao agendar:', error.message)
     if (browser) await browser.close()
@@ -186,7 +193,6 @@ setInterval(async () => {
     const ag = clientes[telefone]
     const horaAgendamento = new Date(ag.dataHora)
     const diffHoras = (agora - horaAgendamento) / 36e5
-
     if (diffHoras >= 2 && diffHoras < 3 &&!ag.posVendaEnviado) {
       await client.sendMessage(telefone, `Fala ${ag.nome}! Curtiu o corte de hoje?
 
@@ -199,15 +205,11 @@ Quando quiser voltar é só me chamar. Tamo junto!`)
 
 client.on('message', async msg => {
   if (msg.from.includes('@g.us')) return
-
   const telefone = msg.from
   const nomeContato = msg._data.notifyName || 'cliente'
   const texto = msg.body
-
   console.log(`MSG de ${nomeContato}: ${texto}`)
-
   const ia = await entenderMensagem(texto, nomeContato)
-
   if (ia.intencao === 'horarios') {
     await msg.reply('Pera, tô vendo os horários livres...')
     const horarios = await buscarHorariosSalonSoft()
@@ -222,23 +224,19 @@ Qual tu quer?`)
     }
     return
   }
-
   if (ia.intencao === 'agendar' && ia.horario) {
     await msg.reply(`Boa! Vou agendar ${ia.horario} pra ti. Só confirmando...`)
     const resultado = await agendarSalonSoft(ia.horario, ia.nome || nomeContato)
-
     if (resultado.sucesso) {
       const [h, m] = ia.horario.split(':')
       const dataHora = new Date()
       dataHora.setHours(parseInt(h), parseInt(m), 0, 0)
-
       clientes[telefone] = {
         nome: ia.nome || nomeContato,
         horario: ia.horario,
         dataHora: dataHora,
         posVendaEnviado: false
       }
-
       const hoje = new Date().toLocaleDateString('pt-BR')
       await msg.reply(`Agendado com sucesso!
 
@@ -257,11 +255,7 @@ Esse horário deve ter sido ocupado. Manda "horarios" que te mostro os livres.`)
     }
     return
   }
-
   await msg.reply(ia.resposta)
 })
 
-client.initialize({
-  pairingCode: true,
-  phoneNumber: BOT_PHONE_NUMBER
-})
+client.initialize()
