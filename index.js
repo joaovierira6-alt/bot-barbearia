@@ -12,6 +12,8 @@ app.use(express.json())
 const SALON_LOGIN = process.env.SALON_LOGIN
 const SALON_SENHA = process.env.SALON_SENHA
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
+const BOT_PHONE_NUMBER = '5551981246261'
+const ENDERECO_BARBEARIA = 'Rua 112, n° 28 - Guajuviras, Canoas'
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY)
 
 const clientes = {}
@@ -30,7 +32,12 @@ const client = new Client({
 })
 
 client.on('qr', qr => {
-  console.log('LINK DO QR: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr))
+  console.log('QR gerado. Use o CÓDIGO DE PAREAMENTO abaixo para conectar.')
+})
+
+client.on('code', code => {
+  console.log('>>> CÓDIGO DE PAREAMENTO: ' + code + ' <<<')
+  console.log('WhatsApp -> Aparelhos conectados -> Conectar com número de telefone -> Digite o código acima')
 })
 
 client.on('ready', () => console.log('>>> BOT INTELIGENTE ONLINE <<< '))
@@ -38,7 +45,7 @@ client.on('ready', () => console.log('>>> BOT INTELIGENTE ONLINE <<< '))
 async function entenderMensagem(texto, nomeCliente) {
   const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
   const prompt = `
-Você é atendente da Barbearia do João em Canoas.
+Você é atendente da Barbearia do João em Guajuviras, Canoas.
 Cliente: ${nomeCliente}
 Mensagem: "${texto}"
 
@@ -94,8 +101,8 @@ async function buscarHorariosSalonSoft() {
     const horarios = await page.evaluate(() => {
       const horasPadrao = ['09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00']
       const agendamentos = Array.from(document.querySelectorAll('.fc-event,.evento,[class*="agendamento"]'))
-       .map(el => el.innerText)
-       .join(' | ')
+    .map(el => el.innerText)
+    .join(' | ')
       return horasPadrao.filter(hora =>!agendamentos.includes(hora)).slice(0, 8)
     })
 
@@ -155,11 +162,11 @@ async function agendarSalonSoft(horario, nomeCliente) {
     await page.keyboard.press('Enter')
     await page.waitForTimeout(1500)
 
-    const botaoSalvar = await page.$('button:contains("Salvar"), button:contains("Agendar"), button:contains("Confirmar"), button[type="submit"]')
+    const botaoSalvar = await page.$('button[type="submit"]')
     if (botaoSalvar) {
       await botaoSalvar.click()
     } else {
-      await page.click('button[type="submit"]')
+      await page.keyboard.press('Enter')
     }
 
     await page.waitForTimeout(3000)
@@ -240,7 +247,7 @@ Horário: ${ia.horario}
 Cliente: ${ia.nome || nomeContato}
 
 Te espero aqui na Barbearia do João!
-Rua das Tesouras, 123 - Canoas
+${ENDERECO_BARBEARIA}
 
 Se precisar cancelar, me avisa.`)
     } else {
@@ -254,4 +261,7 @@ Esse horário deve ter sido ocupado. Manda "horarios" que te mostro os livres.`)
   await msg.reply(ia.resposta)
 })
 
-client.initialize()
+client.initialize({
+  pairingCode: true,
+  phoneNumber: BOT_PHONE_NUMBER
+})
