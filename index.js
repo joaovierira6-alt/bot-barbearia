@@ -1,6 +1,7 @@
 const express = require('express')
 const { Client, LocalAuth } = require('whatsapp-web.js')
 const qrcode = require('qrcode-terminal')
+const puppeteer = require('puppeteer')
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -18,7 +19,7 @@ const client = new Client({
   authStrategy: new LocalAuth({ dataPath: './sessions' }),
   puppeteer: {
     headless: 'new',
-    executablePath: '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
+    executablePath: puppeteer.executablePath(),
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
