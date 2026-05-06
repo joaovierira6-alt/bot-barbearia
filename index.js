@@ -10,13 +10,8 @@ app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: './session' }),
     puppeteer: {
-        headless: 'new',
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    },
-    webVersionCache: {
-        type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
     }
 });
 
@@ -26,10 +21,6 @@ client.on('code', code => {
     console.log('================================');
     console.log('CODIGO DE PAREAMENTO:', code);
     console.log('================================');
-});
-
-client.on('qr', () => {
-    console.log('QR CODE GERADO. USE O CODIGO DE PAREAMENTO SE PREFERIR');
 });
 
 client.on('ready', () => console.log('BOT APPBARBER ONLINE'));
@@ -55,4 +46,9 @@ client.on('message', async msg => {
     if (sessoes[telefone]?.etapa === 'aviso') {
         await chat.sendStateTyping();
         await msg.reply('Opa. Por hoje marca direto com a gente: 51 98124-6261\n\nAmanha o robo ja marca sozinho.');
-        client.sendMessage(MEU_NUMERO, `CLIENTE CHAMOU\n\nNome: ${nome}\nNumero: +
+        client.sendMessage(MEU_NUMERO, `CLIENTE CHAMOU\n\nNome: ${nome}\nNumero: +${telefone}\nMensagem: ${msg.body}`);
+        delete sessoes[telefone];
+    }
+});
+
+client.initialize();
