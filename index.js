@@ -1,4 +1,5 @@
-import { Client, LocalAuth } from 'whatsapp-web.js';
+import pkg from 'whatsapp-web.js';
+const { Client, LocalAuth } = pkg;
 import qrcode from 'qrcode-terminal';
 import express from 'express';
 
@@ -30,23 +31,18 @@ client.on('message', async msg => {
     const telefone = contato.number;
     const nome = contato.pushname || 'Cliente';
 
-    // Ignora grupos
     if (chat.isGroup) return;
 
     if (msg.body.toLowerCase().match(/^(oi|olá|ola|menu|bom dia|boa tarde|boa noite)$/)) {
         sessoes[telefone] = { etapa: 'aviso' };
         await chat.sendStateTyping();
-        return msg.reply('Barbearia do Gui\n\nNosso sistema de agendamento automatico volta amanha.\n\nPor hoje, chama aqui no WhatsApp 51 98124-6261 que a gente marca pra ti.\n\nHorario de atendimento: 9h as 19h');
+        return msg.reply('Barbearia do Gui\n\nNosso sistema de agendamento automatico volta amanha.\n\nPor hoje, chama aqui no WhatsApp 51 98124-6261 que a gente marca pra ti.\n\nHorario: 9h as 19h');
     }
 
-    // Se a pessoa mandar qualquer coisa depois do "oi"
     if (sessoes[telefone]?.etapa === 'aviso') {
         await chat.sendStateTyping();
         await msg.reply('Opa. Por hoje marca direto com a gente: 51 98124-6261\n\nAmanha o robo ja marca sozinho.');
-
-        // Te avisa no privado
         client.sendMessage(MEU_NUMERO, `CLIENTE CHAMOU\n\nNome: ${nome}\nNumero: +${telefone}\nMensagem: ${msg.body}`);
-
         delete sessoes[telefone];
     }
 });
