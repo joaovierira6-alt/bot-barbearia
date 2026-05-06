@@ -1,15 +1,13 @@
 {
-  "name": "bot-barbearia",
+  "name": "bot-appbarber",
   "version": "1.0.0",
   "type": "module",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
+  "scripts": { "start": "node index.js" },
   "dependencies": {
     "express": "^4.18.2",
     "qrcode-terminal": "^0.12.0",
     "whatsapp-web.js": "^1.23.0",
-    "node-schedule": "^2.1.1"
+    "axios": "^1.6.2"
   }
 }
