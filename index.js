@@ -1,23 +1,36 @@
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
 import express from 'express';
+import { execSync } from 'child_process';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Bot AppBarber Online'));
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
 
+// Procura o Chrome instalado pelo Build Command
+let chromePath;
+try {
+    chromePath = execSync('find./chrome -name chrome -type f | head -n 1').toString().trim();
+    console.log('Chrome encontrado em:', chromePath);
+} catch (e) {
+    console.log('Chrome não encontrado, usando padrão');
+    chromePath = undefined;
+}
+
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: './session' }),
     puppeteer: {
         headless: true,
+        executablePath: chromePath,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-gpu',
             '--no-zygote',
-            '--single-process'
+            '--single-process',
+            '--disable-extensions'
         ]
     }
 });
