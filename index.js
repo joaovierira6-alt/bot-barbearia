@@ -1,11 +1,11 @@
 import { Client, LocalAuth } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import express from 'express';
-import schedule from 'node-schedule';
+import axios from 'axios';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot Barbearia Online 💈'));
+app.get('/', (req, res) => res.send('Bot AppBarber Online'));
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
 
 const client = new Client({
@@ -17,78 +17,138 @@ const client = new Client({
     }
 });
 
-// ===== CONFIGURA AQUI =====
-const MEU_NUMERO = '5551981246261@c.us'; // Teu número com 55
-const HORARIOS = [9, 10, 11, 14, 15, 16, 17, 18];
-// ==========================
+// ===== CONFIG API APPBARBER =====
+const APPBARBER_TOKEN = process.env.APPBARBER_TOKEN; 
+const APPBARBER_URL = 'https://api.appbarber.com.br'; 
+const ESTABLISHMENT_CODE = process.env.ESTABLISHMENT_CODE;
+const MEU_NUMERO = '5551981246261@c.us';
+
+const api = axios.create({
+    baseURL: APPBARBER_URL,
+    headers: { 'Authorization': `Bearer ${APPBARBER_TOKEN}` }
+});
+// =================================
 
 client.on('qr', qr => qrcode.generate(qr, { small: true }));
-client.on('code', code => console.log('CÓDIGO:', code));
-client.on('ready', () => console.log('BOT ONLINE! 💈'));
+client.on('code', code => console.log('CODIGO PAREAMENTO:', code));
+client.on('ready', () => console.log('BOT APPBARBER ONLINE'));
 
-let agendamentos = {};
+let sessoes = {};
 
 client.on('message', async msg => {
     const chat = await msg.getChat();
     const contato = await msg.getContact();
     const telefone = contato.number;
-    const numeroCliente = `${telefone}@c.us`;
     const nome = contato.pushname || 'Cliente';
 
-    // SAUDAÇÃO
-    if (msg.body.toLowerCase().match(/^(oi|olá|ola|menu|bom dia|boa tarde|boa noite)$/)) {
-        agendamentos[telefone] = { etapa: 'servico' };
-        msg.reply('Salve! 💈 Barbearia do Gui.\n\nO que vamos fazer hoje?\n\n1. Corte R$40\n2. Barba R$30\n3. Corte + Barba R$60\n4. Sobrancelha R$20\n\nManda o número.');
-        return;
-    }
+    try {
+        // 1. SAUDACAO + PUXA SERVICOS
+        if (msg.body.toLowerCase().match(/^(oi|olá|ola|menu|bom dia|boa tarde|boa noite)$/)) {
+            sessoes[telefone] = { etapa: 'servico' };
+            await chat.sendStateTyping();
 
-    // ESCOLHEU SERVIÇO
-    if (agendamentos[telefone]?.etapa === 'servico') {
-        const servicos = { '1': 'Corte R$40', '2': 'Barba R$30', '3': 'Corte + Barba R$60', '4': 'Sobrancelha R$20' };
-        if (servicos[msg.body]) {
-            agendamentos[telefone].servico = servicos[msg.body];
-            agendamentos[telefone].etapa = 'horario';
-
-            let texto = `Beleza, ${servicos[msg.body]} ✅\n\nQue horas tu prefere hoje?\n\n`;
-            HORARIOS.forEach((h, i) => { texto += `${i + 1}. ${h}:00\n`; });
-            texto += '\nManda o número do horário.';
-
-            agendamentos[telefone].horarios = HORARIOS;
-            msg.reply(texto);
-        } else {
-            msg.reply('Não entendi. Manda 1, 2, 3 ou 4.');
-        }
-        return;
-    }
-
-    // ESCOLHEU HORÁRIO = TE NOTIFICA
-    if (agendamentos[telefone]?.etapa === 'horario') {
-        const horarios = agendamentos[telefone].horarios;
-        const escolha = parseInt(msg.body) - 1;
-
-        if (horarios[escolha]!== undefined) {
-            const horaEscolhida = horarios[escolha];
-            const dados = agendamentos[telefone];
-
-            // 1. AVISA CLIENTE
-            await msg.reply(`Boa! Anotei teu pedido ✅\n\n📋 ${dados.servico}\n🕐 Hoje ${horaEscolhida}:00\n\nVou confirmar com o barbeiro e já te retorno em 2min pra fechar 💈`);
-
-            // 2. TE NOTIFICA COM TUDO
-            client.sendMessage(MEU_NUMERO, `💈 NOVO PEDIDO\n\nCliente: ${nome}\nFone: +${telefone}\nQuer: ${dados.servico}\nHorário pedido: Hoje ${horaEscolhida}:00\n\nConfere no AppBarber se tá livre e confirma pro cliente.`);
-
-            // 3. LEMBRETE 1H ANTES - Só dispara se tu confirmar pro cliente
-            const hoje = new Date().toISOString().split('T')[0];
-            const dataAgendamento = new Date(`${hoje}T${horaEscolhida}:00:00-03:00`);
-            const umaHoraAntes = new Date(dataAgendamento.getTime() - 60 * 60 * 1000);
-
-            schedule.scheduleJob(umaHoraAntes, () => {
-                client.sendMessage(numeroCliente, `Opa ${nome}! 💈\n\nLembrando: teu horário é daqui 1h\n📋 ${dados.servico} às ${horaEscolhida}:00\n\nTe espero!`);
+            const { data } = await api.get('/v1/services', {
+                params: { establishment_code: ESTABLISHMENT_CODE, type: 1 }
             });
+            const servicos = data.data || data;
 
-            delete agendamentos[telefone];
-        } else {
-            msg.reply('Esse número não tá na lista. Escolhe um dos horários que te mandei.');
+            let texto = 'Barbearia do Gui\n\nO que vamos fazer hoje?\n\n';
+            servicos.forEach((s, i) => { texto += `${i + 1}. ${s.name} - R$${s.price}\n`; });
+            texto += '\nManda o numero.';
+
+            sessoes[telefone].listaServicos = servicos;
+            return msg.reply(texto);
         }
+
+        // 2. ESCOLHEU SERVICO -> PUXA BARBEIROS
+        if (sessoes[telefone]?.etapa === 'servico') {
+            const escolha = parseInt(msg.body) - 1;
+            const servicos = sessoes[telefone].listaServicos;
+
+            if (servicos[escolha]) {
+                sessoes[telefone].servico = servicos[escolha];
+                sessoes[telefone].etapa = 'barbeiro';
+                await chat.sendStateTyping();
+
+                const { data } = await api.get('/v1/professionals', {
+                    params: { establishment_code: ESTABLISHMENT_CODE }
+                });
+                const barbeiros = data.data || data;
+
+                let texto = `Servico: ${servicos[escolha].name}\n\nCom qual barbeiro?\n\n`;
+                barbeiros.forEach((b, i) => { texto += `${i + 1}. ${b.name}\n`; });
+
+                sessoes[telefone].listaBarbeiros = barbeiros;
+                return msg.reply(texto);
+            }
+        }
+
+        // 3. ESCOLHEU BARBEIRO -> PUXA HORARIOS LIVRES
+        if (sessoes[telefone]?.etapa === 'barbeiro') {
+            const escolha = parseInt(msg.body) - 1;
+            const barbeiros = sessoes[telefone].listaBarbeiros;
+
+            if (barbeiros[escolha]) {
+                sessoes[telefone].barbeiro = barbeiros[escolha];
+                sessoes[telefone].etapa = 'horario';
+                await chat.sendStateTyping();
+
+                const hoje = new Date().toISOString().split('T')[0];
+                
+                const { data } = await api.get('/v1/availability', {
+                    params: {
+                        establishment_code: ESTABLISHMENT_CODE,
+                        professional_code: barbeiros[escolha].code,
+                        date: hoje
+                    }
+                });
+                const horarios = data.data || data;
+
+                if (!horarios.length) {
+                    return msg.reply(`Sem horarios disponiveis hoje com ${barbeiros[escolha].name}. Tente amanha enviando "oi" novamente.`);
+                }
+
+                let texto = `Barbeiro: ${barbeiros[escolha].name}\n\nHorarios livres hoje:\n\n`;
+                horarios.forEach((h, i) => { texto += `${i + 1}. ${h.time}\n`; });
+                texto += '\nQual horario?';
+
+                sessoes[telefone].listaHorarios = horarios;
+                sessoes[telefone].data = hoje;
+                return msg.reply(texto);
+            }
+        }
+
+        // 4. ESCOLHEU HORARIO -> CRIA AGENDAMENTO
+        if (sessoes[telefone]?.etapa === 'horario') {
+            const escolha = parseInt(msg.body) - 1;
+            const horarios = sessoes[telefone].listaHorarios;
+
+            if (horarios[escolha]) {
+                const d = sessoes[telefone];
+                await chat.sendStateTyping();
+
+                await api.post('/v1/appointments', {
+                    establishment_code: ESTABLISHMENT_CODE,
+                    professional_code: d.barbeiro.code,
+                    service_code: d.servico.code,
+                    date: d.data,
+                    time: horarios[escolha].time,
+                    client_name: nome,
+                    client_phone: telefone
+                });
+
+                await msg.reply(`Agendamento confirmado\n\nServico: ${d.servico.name}\nBarbeiro: ${d.barbeiro.name}\nHorario: Hoje ${horarios[escolha].time}\n\nJa esta marcado no sistema. Aguardamos voce.`);
+
+                client.sendMessage(MEU_NUMERO, `AGENDAMENTO CONFIRMADO\n\nCliente: ${nome} +${telefone}\n${d.servico.name} com ${d.barbeiro.name}\nHoje ${horarios[escolha].time}`);
+
+                delete sessoes[telefone];
+            }
+        }
+
+    } catch (e) {
+        console.error('ERRO:', e.response?.data || e.message);
+        msg.reply('Ocorreu um erro no sistema. Entre em contato pelo telefone 51 98124-6261 para agendar.');
+        delete sessoes[telefone];
     }
 });
 
