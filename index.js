@@ -1,6 +1,5 @@
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
-import qrcode from 'qrcode-terminal';
 import express from 'express';
 
 const app = express();
@@ -14,14 +13,28 @@ const client = new Client({
         headless: 'new',
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
+    },
+    webVersionCache: {
+        type: 'remote',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
     }
 });
 
 const MEU_NUMERO = '5551981246261@c.us';
 
-client.on('qr', qr => qrcode.generate(qr, { small: true }));
-client.on('code', code => console.log('CODIGO PAREAMENTO:', code));
+client.on('code', code => {
+    console.log('================================');
+    console.log('CODIGO DE PAREAMENTO:', code);
+    console.log('================================');
+});
+
+client.on('qr', () => {
+    console.log('QR CODE GERADO. USE O CODIGO DE PAREAMENTO SE PREFERIR');
+});
+
 client.on('ready', () => console.log('BOT APPBARBER ONLINE'));
+client.on('auth_failure', msg => console.error('FALHA NA AUTENTICACAO', msg));
+client.on('disconnected', reason => console.log('DESCONECTADO:', reason));
 
 let sessoes = {};
 
@@ -42,9 +55,4 @@ client.on('message', async msg => {
     if (sessoes[telefone]?.etapa === 'aviso') {
         await chat.sendStateTyping();
         await msg.reply('Opa. Por hoje marca direto com a gente: 51 98124-6261\n\nAmanha o robo ja marca sozinho.');
-        client.sendMessage(MEU_NUMERO, `CLIENTE CHAMOU\n\nNome: ${nome}\nNumero: +${telefone}\nMensagem: ${msg.body}`);
-        delete sessoes[telefone];
-    }
-});
-
-client.initialize();
+        client.sendMessage(MEU_NUMERO, `CLIENTE CHAMOU\n\nNome: ${nome}\nNumero: +
