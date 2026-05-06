@@ -11,13 +11,24 @@ const client = new Client({
     authStrategy: new LocalAuth({ dataPath: './session' }),
     puppeteer: {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-zygote',
+            '--single-process'
+        ]
     }
 });
 
 const MEU_NUMERO = '5551981246261@c.us';
 
-client.on('code', code => {
+client.on('qr', () => {
+    console.log('QR gerado. Aguardando CODIGO DE PAREAMENTO...');
+});
+
+client.on('code', (code) => {
     console.log('================================');
     console.log('CODIGO DE PAREAMENTO:', code);
     console.log('================================');
