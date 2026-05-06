@@ -17,9 +17,8 @@ const client = new Client({
     }
 });
 
-// ===== CONFIG API APPBARBER =====
-const APPBARBER_TOKEN = process.env.APPBARBER_TOKEN; 
-const APPBARBER_URL = 'https://api.appbarber.com.br'; 
+const APPBARBER_TOKEN = process.env.APPBARBER_TOKEN;
+const APPBARBER_URL = 'https://api.appbarber.com.br';
 const ESTABLISHMENT_CODE = process.env.ESTABLISHMENT_CODE;
 const MEU_NUMERO = '5551981246261@c.us';
 
@@ -27,7 +26,6 @@ const api = axios.create({
     baseURL: APPBARBER_URL,
     headers: { 'Authorization': `Bearer ${APPBARBER_TOKEN}` }
 });
-// =================================
 
 client.on('qr', qr => qrcode.generate(qr, { small: true }));
 client.on('code', code => console.log('CODIGO PAREAMENTO:', code));
@@ -42,7 +40,6 @@ client.on('message', async msg => {
     const nome = contato.pushname || 'Cliente';
 
     try {
-        // 1. SAUDACAO + PUXA SERVICOS
         if (msg.body.toLowerCase().match(/^(oi|olá|ola|menu|bom dia|boa tarde|boa noite)$/)) {
             sessoes[telefone] = { etapa: 'servico' };
             await chat.sendStateTyping();
@@ -52,6 +49,10 @@ client.on('message', async msg => {
             });
             const servicos = data.data || data;
 
+            if (!servicos.length) {
+                return msg.reply('Nenhum servico cadastrado no sistema.');
+            }
+
             let texto = 'Barbearia do Gui\n\nO que vamos fazer hoje?\n\n';
             servicos.forEach((s, i) => { texto += `${i + 1}. ${s.name} - R$${s.price}\n`; });
             texto += '\nManda o numero.';
@@ -60,7 +61,6 @@ client.on('message', async msg => {
             return msg.reply(texto);
         }
 
-        // 2. ESCOLHEU SERVICO -> PUXA BARBEIROS
         if (sessoes[telefone]?.etapa === 'servico') {
             const escolha = parseInt(msg.body) - 1;
             const servicos = sessoes[telefone].listaServicos;
@@ -77,13 +77,15 @@ client.on('message', async msg => {
 
                 let texto = `Servico: ${servicos[escolha].name}\n\nCom qual barbeiro?\n\n`;
                 barbeiros.forEach((b, i) => { texto += `${i + 1}. ${b.name}\n`; });
+                texto += '\nManda o numero.';
 
                 sessoes[telefone].listaBarbeiros = barbeiros;
                 return msg.reply(texto);
+            } else {
+                return msg.reply('Opcao invalida. Escolha um numero da lista.');
             }
         }
 
-        // 3. ESCOLHEU BARBEIRO -> PUXA HORARIOS LIVRES
         if (sessoes[telefone]?.etapa === 'barbeiro') {
             const escolha = parseInt(msg.body) - 1;
             const barbeiros = sessoes[telefone].listaBarbeiros;
@@ -94,7 +96,7 @@ client.on('message', async msg => {
                 await chat.sendStateTyping();
 
                 const hoje = new Date().toISOString().split('T')[0];
-                
+
                 const { data } = await api.get('/v1/availability', {
                     params: {
                         establishment_code: ESTABLISHMENT_CODE,
@@ -105,6 +107,7 @@ client.on('message', async msg => {
                 const horarios = data.data || data;
 
                 if (!horarios.length) {
+                    delete sessoes[telefone];
                     return msg.reply(`Sem horarios disponiveis hoje com ${barbeiros[escolha].name}. Tente amanha enviando "oi" novamente.`);
                 }
 
@@ -115,10 +118,11 @@ client.on('message', async msg => {
                 sessoes[telefone].listaHorarios = horarios;
                 sessoes[telefone].data = hoje;
                 return msg.reply(texto);
+            } else {
+                return msg.reply('Opcao invalida. Escolha um numero da lista.');
             }
         }
 
-        // 4. ESCOLHEU HORARIO -> CRIA AGENDAMENTO
         if (sessoes[telefone]?.etapa === 'horario') {
             const escolha = parseInt(msg.body) - 1;
             const horarios = sessoes[telefone].listaHorarios;
@@ -142,6 +146,8 @@ client.on('message', async msg => {
                 client.sendMessage(MEU_NUMERO, `AGENDAMENTO CONFIRMADO\n\nCliente: ${nome} +${telefone}\n${d.servico.name} com ${d.barbeiro.name}\nHoje ${horarios[escolha].time}`);
 
                 delete sessoes[telefone];
+            } else {
+                return msg.reply('Opcao invalida. Escolha um numero da lista.');
             }
         }
 
