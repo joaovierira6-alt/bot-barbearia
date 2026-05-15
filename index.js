@@ -1,4 +1,4 @@
-import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys'
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, delay } from '@whiskeysockets/baileys'
 import express from 'express'
 
 const app = express()
@@ -7,35 +7,52 @@ app.get('/', (req, res) => res.send('Bot AppBarber Online'))
 app.listen(PORT, () => console.log('Servidor rodando na porta', PORT))
 
 const MEU_NUMERO = '5551981246261'
+let tentativas = 0
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
-        browser: ['AppBarber', 'Chrome', '1.0.0']
+        browser: ['AppBarber', 'Chrome', '1.0.0'],
+        connectTimeoutMs: 60000,
+        keepAliveIntervalMs: 10000,
+        retryRequestDelayMs: 2000,
     })
 
-    if (!sock.authState.creds.registered) {
-        setTimeout(async () => {
-            try {
-                const code = await sock.requestPairingCode(MEU_NUMERO)
-                console.log('================================')
-                console.log('CODIGO DE PAREAMENTO:', code)
-                console.log('================================')
-            } catch (e) {
-                console.log('Erro ao pedir codigo:', e.message)
-            }
-        }, 3000)
-    }
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update
+        if (connection === 'open') {
+            console.log('✅ BOT APPBARBER CONECTADO COM SUCESSO')
+            tentativas = 0
+        }
+
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut
-            if (shouldReconnect) startBot()
-        } else if (connection === 'open') {
-            console.log('BOT APPBARBER CONECTADO COM SUCESSO')
+            const codigo = lastDisconnect?.error?.output?.statusCode
+            const shouldReconnect = codigo !== DisconnectReason.loggedOut
+            console.log('❌ Conexão fechada. Código:', codigo, '| Reconectando:', shouldReconnect)
+            if (shouldReconnect) {
+                await delay(3000)
+                startBot()
+            }
+        }
+
+        // Pede o código de pareamento assim que conectar ao WA
+        if (connection === 'connecting' || update.isNewLogin) {
+            if (!sock.authState.creds.registered && tentativas < 3) {
+                tentativas++
+                console.log(`Tentativa ${tentativas} de pedir código...`)
+                await delay(5000)
+                try {
+                    const code = await sock.requestPairingCode(MEU_NUMERO)
+                    console.log('================================')
+                    console.log('🔑 CODIGO DE PAREAMENTO:', code)
+                    console.log('================================')
+                } catch (e) {
+                    console.log('Erro ao pedir codigo:', e.message)
+                }
+            }
         }
     })
 
