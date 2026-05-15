@@ -1,74 +1,78 @@
-import pkg from 'whatsapp-web.js';
-const { Client, LocalAuth } = pkg;
-import express from 'express';
-import { execSync } from 'child_process';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys'
+import express from 'express'
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send('Bot AppBarber Online'));
-app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
+const app = express()
+const PORT = process.env.PORT || 3000
+app.get('/', (req, res) => res.send('Bot AppBarber Online'))
+app.listen(PORT, () => console.log('Servidor rodando na porta', PORT))
 
-let chromePath;
-try {
-    chromePath = execSync('find./chrome -name chrome -type f | head -n 1').toString().trim();
-    console.log('Chrome encontrado em:', chromePath);
-} catch (e) {
-    console.log('Erro ao achar Chrome:', e.message);
+const MEU_NUMERO = '5551981246261'
+
+async function startBot() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: false,
+        browser: ['AppBarber', 'Chrome', '1.0.0']
+    })
+
+    if (!sock.authState.creds.registered) {
+        setTimeout(async () => {
+            try {
+                const code = await sock.requestPairingCode(MEU_NUMERO)
+                console.log('================================')
+                console.log('CODIGO DE PAREAMENTO:', code)
+                console.log('================================')
+            } catch (e) {
+                console.log('Erro ao pedir codigo:', e.message)
+            }
+        }, 3000)
+    }
+
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update
+        if (connection === 'close') {
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut
+            if (shouldReconnect) startBot()
+        } else if (connection === 'open') {
+            console.log('BOT APPBARBER CONECTADO COM SUCESSO')
+        }
+    })
+
+    sock.ev.on('creds.update', saveCreds)
+
+    let sessoes = {}
+
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return
+        const msg = messages[0]
+        if (!msg.message || msg.key.fromMe) return
+
+        const numero = msg.key.remoteJid
+        if (numero.endsWith('@g.us')) return
+
+        const texto = msg.message.conversation || msg.message.extendedTextMessage?.text || ''
+        const nome = msg.pushName || 'Cliente'
+        const telefone = numero.replace('@s.whatsapp.net', '')
+
+        if (texto.toLowerCase().match(/^(oi|olá|ola|menu|bom dia|boa tarde|boa noite)$/)) {
+            sessoes[telefone] = { etapa: 'aviso' }
+            await sock.sendMessage(numero, {
+                text: 'Barbearia do Gui\n\nNosso sistema de agendamento automatico volta amanha.\n\nPor hoje, chama aqui no WhatsApp 51 98124-6261 que a gente marca pra ti.\n\nHorario: 9h as 19h'
+            })
+            return
+        }
+
+        if (sessoes[telefone]?.etapa === 'aviso') {
+            await sock.sendMessage(numero, {
+                text: 'Opa. Por hoje marca direto com a gente: 51 98124-6261\n\nAmanha o robo ja marca sozinho.'
+            })
+            await sock.sendMessage('5551981246261@s.whatsapp.net', {
+                text: `CLIENTE CHAMOU\n\nNome: ${nome}\nNumero: +${telefone}\nMensagem: ${texto}`
+            })
+            delete sessoes[telefone]
+        }
+    })
 }
 
-const MEU_NUMERO = '5551981246261';
-
-const client = new Client({
-    authStrategy: new LocalAuth({ dataPath: './session' }),
-    puppeteer: {
-        headless: true,
-        executablePath: chromePath,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-zygote',
-            '--single-process'
-        ]
-    }
-});
-
-client.on('ready', () => console.log('BOT APPBARBER ONLINE E CONECTADO'));
-client.on('auth_failure', msg => console.error('FALHA NA AUTENTICACAO', msg));
-client.on('disconnected', reason => console.log('DESCONECTADO:', reason));
-
-client.initialize().then(() => {
-    setTimeout(async () => {
-        try {
-            console.log('Solicitando código de pareamento...');
-            const pairingCode = await client.requestPairingCode(MEU_NUMERO);
-            console.log('================================');
-            console.log('CODIGO DE PAREAMENTO:', pairingCode);
-            console.log('================================');
-        } catch (err) {
-            console.log('Erro ao gerar código:', err.message);
-        }
-    }, 5000);
-});
-
-let sessoes = {};
-
-client.on('message', async msg => {
-    const chat = await msg.getChat();
-    const contato = await msg.getContact();
-    const telefone = contato.number;
-    const nome = contato.pushname || 'Cliente';
-    if (chat.isGroup) return;
-    if (msg.body.toLowerCase().match(/^(oi|olá|ola|menu|bom dia|boa tarde|boa noite)$/)) {
-        sessoes[telefone] = { etapa: 'aviso' };
-        await chat.sendStateTyping();
-        return msg.reply('Barbearia do Gui\n\nNosso sistema de agendamento automatico volta amanha.\n\nPor hoje, chama aqui no WhatsApp 51 98124-6261 que a gente marca pra ti.\n\nHorario: 9h as 19h');
-    }
-    if (sessoes[telefone]?.etapa === 'aviso') {
-        await chat.sendStateTyping();
-        await msg.reply('Opa. Por hoje marca direto com a gente: 51 98124-6261\n\nAmanha o robo ja marca sozinho.');
-        client.sendMessage('5551981246261@c.us', `CLIENTE CHAMOU\n\nNome: ${nome}\nNumero: +${telefone}\nMensagem: ${msg.body}`);
-        delete sessoes[telefone];
-    }
-});
+startBot()
