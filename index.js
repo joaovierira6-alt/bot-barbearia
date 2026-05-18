@@ -1,4 +1,4 @@
-import makeWASocket, { useMultiFileAuthState, DisconnectReason, delay } from '@whiskeysockets/baileys'
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, Browsers } from '@whiskeysockets/baileys'
 import express from 'express'
 
 const app = express()
@@ -7,52 +7,51 @@ app.get('/', (req, res) => res.send('Bot AppBarber Online'))
 app.listen(PORT, () => console.log('Servidor rodando na porta', PORT))
 
 const MEU_NUMERO = '5551981246261'
-let tentativas = 0
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys')
+
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
-        browser: ['AppBarber', 'Chrome', '1.0.0'],
-        connectTimeoutMs: 60000,
-        keepAliveIntervalMs: 10000,
-        retryRequestDelayMs: 2000,
+        browser: Browsers.ubuntu('Chrome'),
+        mobile: false,
+        syncFullHistory: false,
+        shouldSyncHistoryMessage: () => false,
+        markOnlineOnConnect: false,
+        defaultQueryTimeoutMs: 0,
     })
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update
-
-        if (connection === 'open') {
-            console.log('✅ BOT APPBARBER CONECTADO COM SUCESSO')
-            tentativas = 0
+    if (!sock.authState.creds.registered) {
+        console.log('Aguardando 3s para solicitar pareamento...')
+        await new Promise(r => setTimeout(r, 3000))
+        try {
+            const code = await sock.requestPairingCode(MEU_NUMERO)
+            console.log('================================')
+            console.log('CODIGO DE PAREAMENTO:', code)
+            console.log('COLA NO WHATSAPP EM 20 SEGUNDOS')
+            console.log('================================')
+        } catch (e) {
+            console.log('ERRO AO PEDIR CODIGO:', e.message)
+            console.log('Reiniciando em 5s...')
+            setTimeout(startBot, 5000)
+            return
         }
+    }
 
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update
         if (connection === 'close') {
-            const codigo = lastDisconnect?.error?.output?.statusCode
-            const shouldReconnect = codigo !== DisconnectReason.loggedOut
-            console.log('❌ Conexão fechada. Código:', codigo, '| Reconectando:', shouldReconnect)
-            if (shouldReconnect) {
-                await delay(3000)
-                startBot()
+            const statusCode = lastDisconnect?.error?.output?.statusCode
+            console.log('Conexao fechada. Codigo:', statusCode)
+            if (statusCode === DisconnectReason.loggedOut) {
+                console.log('Deslogado. Apague a pasta auth_info_baileys e reconecte.')
+            } else {
+                console.log('Reconectando em 3s...')
+                setTimeout(startBot, 3000)
             }
-        }
-
-        // Pede o código de pareamento assim que conectar ao WA
-        if (connection === 'connecting' || update.isNewLogin) {
-            if (!sock.authState.creds.registered && tentativas < 3) {
-                tentativas++
-                console.log(`Tentativa ${tentativas} de pedir código...`)
-                await delay(5000)
-                try {
-                    const code = await sock.requestPairingCode(MEU_NUMERO)
-                    console.log('================================')
-                    console.log('🔑 CODIGO DE PAREAMENTO:', code)
-                    console.log('================================')
-                } catch (e) {
-                    console.log('Erro ao pedir codigo:', e.message)
-                }
-            }
+        } else if (connection === 'open') {
+            console.log('BOT APPBARBER CONECTADO COM SUCESSO')
         }
     })
 
@@ -60,14 +59,12 @@ async function startBot() {
 
     let sessoes = {}
 
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return
+    sock.ev.on('messages.upsert', async ({ messages }) => {
         const msg = messages[0]
-        if (!msg.message || msg.key.fromMe) return
+        if (!msg.message || msg.key.fromMe || msg.key.remoteJid === 'status@broadcast') return
+        if (msg.key.remoteJid.endsWith('@g.us')) return
 
         const numero = msg.key.remoteJid
-        if (numero.endsWith('@g.us')) return
-
         const texto = msg.message.conversation || msg.message.extendedTextMessage?.text || ''
         const nome = msg.pushName || 'Cliente'
         const telefone = numero.replace('@s.whatsapp.net', '')
